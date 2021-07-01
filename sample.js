@@ -1,24 +1,45 @@
-var AWS = require('aws-sdk');
+const AWS = require('aws-sdk');
+const yargs = require('yargs');
 
-var creds = new AWS.Credentials('AKIAISHFKTZPL776QWAQ', 'RK6lTmndbuN6yM/khou2GJKi+K8F1GQH+RJwJWcp');
+//  export AWS_PROFILE=staging
+
+const argv = yargs
+    // .command('lyr', 'Tells whether an year is leap year or not', {
+    //     year: {
+    //         description: 'the year to check for',
+    //         alias: 'y',
+    //         type: 'number',
+    //     }
+    // })
+    .usage("Usage: $0 --vpc vpc_name")
+    .example(
+      "$0 --vpc my-vpc",
+      "Returns VPC's all access groups rules as a layer-3 firewall access list")
+      .option('vpc', {
+        alias: 'v',
+        description: 'VPC ID',
+        type: 'string',
+    })
+    .help()
+    .alias('help', 'h')
+    .argv;
+
 AWS.config.update({
-  region:'us-west-2',
-  credentials: creds
+  region:'us-west-2'
 });
-var ec2 = new AWS.EC2();
+const ec2 = new AWS.EC2();
 
-const VPC = 'vpc-47f51e21';
 const ANY = 'any';
 
-
-getName = function(tags) {
-  name = 'noName?';
+function getName(tags) {
+  var name = 'noName?';
   tags.forEach(function(tag) {
     if (tag.Key == 'Name') name = tag.Value;
   });
   return name;
 }
-extractRule = function(sgrule) {
+
+function extractRule(sgrule) {
   var rule = {
     source: {},
     destination: {},
@@ -50,114 +71,168 @@ extractRule = function(sgrule) {
   return rule;
 }
 
+function getVpcs() {
+  ec2.describeVpcs({}, function(err, data) {
+    if (err) console.log(err, err.stack); 
+    else {
+      console.log("Available VPCs, run with a --vpc argument with one of them to see access rules");
+      data.Vpcs.forEach(vpc => console.log("  " + getName(vpc.Tags)));
+    }
+  });
+}
 
-var params = {Filters: [
-  {
-    Name: 'vpc-id',
-    Values: [
-      VPC
-    ]
+
+async function getVpcIdForName(vpcName) {
+  var params = {Filters: [
+    {
+      Name: 'tag:Name',
+      Values: [
+        vpcName
+      ]
+    }
+  ]};
+
+  var vpcId;
+  try {
+    data = await ec2.describeVpcs(params).promise();
+    if(data.Vpcs.length > 0) {
+      return data.Vpcs[0].VpcId;
+    }
+  } catch (e) {
+    console.error(e)
+    throw e;
   }
-]};
+}
 
-ec2.describeSecurityGroups(params, function(err, data) {
-   if (err) console.log(err, err.stack); 
-   else {
-    var securityGroups = {};
-    data.SecurityGroups.forEach(function(sg) {
-      securityGroup = {
-        GroupName: sg.GroupName,
-        instances: [],
-        rules: [],
-      };
 
-      sg.IpPermissions.forEach(function(sgrule) { // inbound rules
-        rule = extractRule(sgrule);
-        rule.source.sgs = rule.temp.sgs;
-        rule.source.nets = rule.temp.nets;
-        rule.destination.sgs = [sg.GroupId];
-        rule.origin = "inbound";
-        delete rule.temp;
-        securityGroup.rules.push(rule);
+function extract(vpcId) {
+  var params = {Filters: [
+    {
+      Name: 'vpc-id',
+      Values: [
+        vpcId
+      ]
+    }
+  ]};
+  
+  ec2.describeSecurityGroups(params, function(err, data) {
+     if (err) console.log(err, err.stack); 
+     else {
+      var securityGroups = {};
+      data.SecurityGroups.forEach(function(sg) {
+        securityGroup = {
+          GroupName: sg.GroupName,
+          instances: [],
+          rules: [],
+        };
+  
+        sg.IpPermissions.forEach(function(sgrule) { // inbound rules
+          rule = extractRule(sgrule);
+          rule.source.sgs = rule.temp.sgs;
+          rule.source.nets = rule.temp.nets;
+          rule.destination.sgs = [sg.GroupId];
+          rule.origin = "inbound";
+          delete rule.temp;
+          securityGroup.rules.push(rule);
+        });
+        sg.IpPermissionsEgress.forEach(function(sgrule) { // outbound rules
+          rule = extractRule(sgrule);
+          rule.destination.sgs = rule.temp.sgs;
+          rule.destination.nets = rule.temp.nets;
+          rule.source.sgs = [sg.GroupId];
+          rule.origin = "outbound";
+          delete rule.temp;
+          securityGroup.rules.push(rule);
+        });
+  
+        securityGroups[sg.GroupId] = securityGroup;
+  
       });
-      sg.IpPermissionsEgress.forEach(function(sgrule) { // outbound rules
-        rule = extractRule(sgrule);
-        rule.destination.sgs = rule.temp.sgs;
-        rule.destination.nets = rule.temp.nets;
-        rule.source.sgs = [sg.GroupId];
-        rule.origin = "outbound";
-        delete rule.temp;
-        securityGroup.rules.push(rule);
-      });
-
-      securityGroups[sg.GroupId] = securityGroup;
-
-    });
-
-    ec2.describeInstances(params, function(err, data) {
-      if (err) console.log(err, err.stack); 
-      else {
-        data.Reservations.forEach(function(reservation) {
-          reservation.Instances.forEach(function(instance) {
-            if (instance.SecurityGroups) {
-              instance.SecurityGroups.forEach(function(group) {
-                securityGroups[group.GroupId].instances.push({
-                  name: getName(instance.Tags),
-                  ip: instance.PrivateIpAddress,
+  
+      ec2.describeInstances(params, function(err, data) {
+        if (err) console.log(err, err.stack); 
+        else {
+          data.Reservations.forEach(function(reservation) {
+            reservation.Instances.forEach(function(instance) {
+              if (instance.SecurityGroups) {
+                instance.SecurityGroups.forEach(function(group) {
+                  securityGroups[group.GroupId].instances.push({
+                    name: getName(instance.Tags),
+                    ip: instance.PrivateIpAddress,
+                  });
                 });
-              });
+              }
+            });
+          });
+        }
+  
+        var objects = {};
+        Object.keys(securityGroups).forEach(sgid => {
+          var instances = [];
+          securityGroups[sgid].instances.forEach(instance => {
+            instances.push(instance.name+"("+instance.ip+")");
+          });
+          objects[sgid] = securityGroups[sgid].GroupName+"[\n     "+instances.join("\n     ")+"]"
+        });
+  
+        var rules = [];
+        Object.keys(securityGroups).forEach(sgid => {
+          securityGroups[sgid].rules.forEach(sgrule => {
+            var rule = {
+              protocol: sgrule.protocol,
+              port: sgrule.port,
+              source: [],
+              destination: []
+            };
+            sgrule.source.sgs.forEach(rulesg => {
+              rule.source.push(objects[rulesg])
+            });
+            rule.source.push(sgrule.source.nets);
+            sgrule.destination.sgs.forEach(rulesg => {
+              rule.destination.push(objects[rulesg])
+            });
+            rule.destination.push(sgrule.destination.nets);
+  
+            rule.origin = securityGroups[sgid].GroupName + "(" + sgrule.origin + ")";
+  
+            rules.push(rule);
+  
+          });
+        });
+        // console.log(JSON.stringify(rules, null, 1));
+  
+        var output = [];
+        output.push("protocol,port,source,destination,,origin");
+        rules.forEach(rule => {
+          output.push(rule.protocol+","+rule.port+",\""+rule.source.join("\n")+"\",\""+rule.destination.join("\n")+"\",,"+rule.origin)
+        });
+  
+        const fs = require('fs');
+        fs.writeFile("output.csv", output.join("\n"), function(err) {
+            if(err) {
+                return console.log(err);
             }
-          });
-        });
-      }
-
-      var objects = {};
-      Object.keys(securityGroups).forEach(sgid => {
-        var instances = [];
-        securityGroups[sgid].instances.forEach(instance => {
-          instances.push(instance.name+"("+instance.ip+")");
-        });
-        objects[sgid] = securityGroups[sgid].GroupName+"[\n     "+instances.join("\n     ")+"]"
+        }); 
       });
+    }
+  });
+  
+}
 
-      var rules = [];
-      Object.keys(securityGroups).forEach(sgid => {
-        securityGroups[sgid].rules.forEach(sgrule => {
-          var rule = {
-            protocol: sgrule.protocol,
-            port: sgrule.port,
-            source: [],
-            destination: []
-          };
-          sgrule.source.sgs.forEach(rulesg => {
-            rule.source.push(objects[rulesg])
-          });
-          rule.source.push(sgrule.source.nets);
-          sgrule.destination.sgs.forEach(rulesg => {
-            rule.destination.push(objects[rulesg])
-          });
-          rule.destination.push(sgrule.destination.nets);
 
-          rule.origin = securityGroups[sgid].GroupName + "(" + sgrule.origin + ")";
+async function runme() {
 
-          rules.push(rule);
-
-        });
-      });
-      // console.log(JSON.stringify(rules, null, 1));
-
-      var output = [];
-      output.push("protocol,port,source,destination,,origin");
-      rules.forEach(rule => {
-        output.push(rule.protocol+","+rule.port+",\""+rule.source.join("\n")+"\",\""+rule.destination.join("\n")+"\",,"+rule.origin)
-      });
-
-      const fs = require('fs');
-      fs.writeFile("output.csv", output.join("\n"), function(err) {
-          if(err) {
-              return console.log(err);
-          }
-      }); 
-    });
+  if (argv.vpc) {
+    var vpcId = await getVpcIdForName(argv.vpc);
+    if (vpcId) {
+      extract(vpcId);
+    } else {
+      console.log("VPC not found...")
+    }
+  } else {
+    getVpcs();
   }
-});
+}
+
+runme();
+
