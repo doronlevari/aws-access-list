@@ -1,16 +1,9 @@
 const AWS = require('aws-sdk');
 const yargs = require('yargs');
 
-//  export AWS_PROFILE=staging
+const ANY = 'any';
 
 const argv = yargs
-    // .command('lyr', 'Tells whether an year is leap year or not', {
-    //     year: {
-    //         description: 'the year to check for',
-    //         alias: 'y',
-    //         type: 'number',
-    //     }
-    // })
     .usage("Usage: $0 --vpc vpc_name")
     .example(
       "$0 --vpc my-vpc",
@@ -25,11 +18,10 @@ const argv = yargs
     .argv;
 
 AWS.config.update({
-  region:'us-west-2'
+  region:'us-west-22'
 });
-const ec2 = new AWS.EC2();
 
-const ANY = 'any';
+const ec2 = new AWS.EC2();
 
 function getName(tags) {
   var name = 'noName?';
@@ -80,7 +72,6 @@ async function getVpcs() {
   console.log("Available VPCs, run with a --vpc argument with one of them to see access rules");
   data.Vpcs.forEach(vpc => console.log("  " + getName(vpc.Tags)));
 }
-
 
 async function getVpcIdForName(vpcName) {
   var params = {Filters: [
