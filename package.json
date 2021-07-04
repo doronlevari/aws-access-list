@@ -1,5 +1,8 @@
 {
-  "dependencies": {},
+  "dependencies": {
+    "aws-sdk": "^2.936.0",
+    "yargs": "^17.0.1"
+  },
   "name": "aws-nodejs-sample",
   "description": "A simple Node.js application illustrating usage of the AWS SDK for Node.js.",
   "version": "1.0.1",
@@ -11,4 +14,3 @@
   "author": "Doron",
   "license": "ISC"
 }
-
