@@ -18,7 +18,7 @@ const argv = yargs
     .argv;
 
 AWS.config.update({
-  region:'us-west-22'
+  region:'us-west-2'
 });
 
 const ec2 = new AWS.EC2();
@@ -74,16 +74,14 @@ async function getVpcs() {
 }
 
 async function getVpcIdForName(vpcName) {
-  var params = {Filters: [
+  const params = {Filters: [
     {
       Name: 'tag:Name',
-      Values: [
-        vpcName
-      ]
+      Values: [ vpcName ]
     }
   ]};
 
-  data = await ec2.describeVpcs(params).promise();
+  const data = await ec2.describeVpcs(params).promise();
   if(data.Vpcs.length > 0) {
     return data.Vpcs[0].VpcId;
   }
@@ -91,12 +89,10 @@ async function getVpcIdForName(vpcName) {
 
 
 async function extract(vpcId) {
-  var params = {Filters: [
+  const params = {Filters: [
     {
       Name: 'vpc-id',
-      Values: [
-        vpcId
-      ]
+      Values: [ vpcId ]
     }
   ]};
   
@@ -129,9 +125,7 @@ async function extract(vpcId) {
       securityGroup.rules.push(rule);
     });
 
-
     securityGroups[sg.GroupId] = securityGroup;
-  
   });
   
   data = await ec2.describeInstances(params).promise();
@@ -212,22 +206,21 @@ async function extract(vpcId) {
 
 
 async function runme() {
-  if (argv.vpc) {
-    var vpcId = await getVpcIdForName(argv.vpc);
-    if (vpcId) {
-      await extract(vpcId);
+  try {
+    if (argv.vpc) {
+      const vpcId = await getVpcIdForName(argv.vpc);
+      if (vpcId) {
+        await extract(vpcId);
+      } else {
+        console.log("VPC " + argv.vpc + " not found...")
+      }
     } else {
-      console.log("VPC not found...")
+      getVpcs();
     }
-  } else {
-    getVpcs();
+  } catch (e) {
+    console.error(e)
+    process.exit(1);
   }
 }
 
-
-try {
-  runme();
-} catch (e) {
-  console.error(e)
-  throw e;
-}
+runme();
