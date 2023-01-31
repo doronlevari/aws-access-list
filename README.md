@@ -4,6 +4,10 @@ Print all your VPC's access groups rules as a layer-3 firewall access list!
 Drilling down into content of origin/destination Security Groups, "network object" style.
 Easy to answer "what am I allowing?", "what am I blocking?", based on a search for an IP or CIDR.
 
+Example:
+
+![alt text](https://github.com/doronlevari/aws-access-list/blob/main/Doron-AWS.png?raw=true)
+
 Check it out!
 
 ## Preparation...
